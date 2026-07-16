@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import bcrypt
 
-DATABASE_URL = "sqlite+aiosqlite:///./database.db"
+DATABASE_URL = "postgresql://help_center_user:HXCYsCc2SX2d6PkEwYlOFLAtnYT5uIXV@dpg-d9ck4oe7r5hc738nbqog-a.oregon-postgres.render.com/help_center"
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
