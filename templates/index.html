@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastAPI WebSocket Чат</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0F172A;
+            color: #F1F5F9;
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        button {
+            background: #3B82F6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+            margin: 8px 4px;
+        }
+
+        button:hover {
+            background: #0284C7;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        button.secondary {
+            background: transparent;
+            border: 1px solid #3B82F6;
+            color: #3B82F6;
+        }
+
+        button.secondary:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        input,
+        textarea,
+        select {
+            background: #1E293B;
+            border: 1px solid #475569;
+            color: #F1F5F9;
+            padding: 12px;
+            border-radius: 8px;
+            width: 100%;
+            margin-bottom: 16px;
+            display: block;
+            position: relative;
+            z-index: 10;
+            /* Переконуємося, що поля завжди зверху будь-яких невидимих шарів */
+            pointer-events: auto !important;
+            /* Примусово дозволяємо події миші */
+            user-select: auto !important;
+            -webkit-user-select: auto !important;
+        }
+
+        input:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #3B82F6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+
+        #register-section,
+        #login-section,
+        #chat-section,
+        #admin-panel-section {
+            max-width: 500px;
+            margin: 50px auto;
+            background: #1E293B;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+            position: relative;
+            z-index: 9999;
+        }
+
+        #chat-section,
+        #admin-panel-section {
+            max-width: 800px;
+        }
+
+        h2 {
+            border-bottom: 2px solid #3B82F6;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .problem-card {
+            background: #1E293B;
+            border: 1px solid #334155;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .problem-card:hover {
+            transform: translateY(-2px);
+            border-left: 4px solid #3B82F6;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            background: #E0F2FE;
+            color: #0284C7;
+        }
+
+        .status-in-progress {
+            background: #3B82F6;
+            color: white;
+        }
+
+        .status-completed {
+            background: #334155;
+            color: #94A3B8;
+        }
+
+        .message {
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-radius: 12px;
+            max-width: 70%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message.my {
+            background: #3B82F6;
+            color: white;
+            margin-left: auto;
+            border-radius: 12px 12px 0 12px;
+        }
+
+        .message.other {
+            background: #334155;
+            color: #F1F5F9;
+            border-radius: 12px 12px 12px 0;
+        }
+
+        .message .sender {
+            font-size: 12px;
+            color: #38BDF8;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .message-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #10B981;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border: 1px solid #334155;
+            text-align: left;
+        }
+
+        th {
+            background: #334155;
+        }
+
+        a {
+            color: #38BDF8;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="register-section">
+        <h2>Реєстрація</h2>
+        <h3 id="register-error" style="color: #EF4444;"></h3>
+        <form method="post" onsubmit="register(event)">
+            <input type="text" id="register_username" placeholder="username" autocomplete="off" required>
+            <input type="email" id="email" placeholder="email" autocomplete="off" required>
+            <input type="password" id="register_password" placeholder="password" autocomplete="new-password" required>
+            <button type="submit">Зареєструватися</button>
+        </form>
+        <p>Вже маєте акаунт? <a href="#" onclick="showLoginSection(event)">Увійти</a></p>
+    </div>
+
+    <div id="login-section" style="display: none;">
+        <h2>Вхід</h2>
+        <h3 id="login-error" style="color: #EF4444;"></h3>
+        <form method="post" onsubmit="login(event)">
+            <input type="text" id="login_username" placeholder="username" autocomplete="off" required>
+            <input type="password" id="login_password" placeholder="password" autocomplete="current-password" required>
+            <button type="submit">Увійти</button>
+        </form>
+        <p>Ще не зареєстровані? <a href="#" onclick="showRegisterSection(event)">Створити акаунт</a></p>
+    </div>
+
+    <div id="chat-section" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 id="user-display">Користувач: <span id="username-display"></span> (<span id="role-display"></span>)</h2>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div id="user-avatar"
+                    style="width: 40px; height: 40px; border-radius: 50%; background: #3B82F6; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">
+                </div>
+                <button onclick="showSettings()">Налаштування</button>
+                <button onclick="logout()">Вийти</button>
+            </div>
+        </div>
+
+        <div id="problems-list">
+            <h3>Список проблем</h3>
+            <button id="create-problem-btn" onclick="showCreateProblemForm()">Додати нову проблему</button>
+            <div id="problems-container"></div>
+
+            <h3 id="available-title" style="display: none; margin-top:30px;">Доступні для призначення проблеми</h3>
+            <div id="available-container" style="display: none;"></div>
+
+            <div id="admin-panel-entry"
+                style="display: none; margin-top: 30px; border-top: 2px solid #334155; padding-top: 20px;">
+                <h3>Адміністрування системи</h3>
+                <button onclick="showAdminPanel()">Панель користувачів (Admin)</button>
+            </div>
+        </div>
+
+        <div id="problem-details" style="display: none;">
+            <button onclick="backToProblemsList()">← Назад до списку</button>
+            <h3 id="detail-title"></h3>
+            <p id="detail-description"></p>
+            <div style="margin: 15px 0;">
+                <img id="detail-image"
+                    style="max-width: 100%; max-height: 300px; display: none; border-radius: 8px; border: 1px solid #475569;">
+            </div>
+            <p><strong>Статус:</strong> <span id="detail-status" class="status-badge"></span></p>
+            <p><strong>Користувач:</strong> <span id="detail-username"></span></p>
+            <p><strong>Технік:</strong> <span id="detail-admin"></span></p>
+
+            <div id="detail-actions" style="margin: 15px 0;"></div>
+
+            <h4>Повідомлення</h4>
+            <div id="messages-container"
+                style="max-height: 300px; overflow-y: auto; margin-bottom: 15px; border: 1px solid #334155; padding: 10px; border-radius: 8px;">
+            </div>
+
+            <form onsubmit="sendMessage(event)">
+                <input type="text" id="messageText" autocomplete="off" placeholder="Введіть повідомлення" required />
+                <button type="submit">Надіслати</button>
+            </form>
+        </div>
+
+        <div id="create-problem-form" style="display: none;">
+            <button onclick="backToProblemsList()">← Назад</button>
+            <h3>Створити нову проблему</h3>
+            <h3 id="problem-error" style="color: #EF4444;"></h3>
+            <form method="post" onsubmit="createProblem(event)">
+                <input type="text" id="problem_title" placeholder="Назва проблеми" autocomplete="off" required>
+                <textarea id="problem_description" placeholder="Опис проблеми" required></textarea>
+                <input type="file" id="problem_image" accept="image/*">
+                <button type="submit">Створити</button>
+            </form>
+        </div>
+
+        <div id="settings-modal"
+            style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000;">
+            <div
+                style="background: #1E293B; padding: 30px; border-radius: 8px; max-width: 400px; margin: 100px auto; color: #F1F5F9; position: relative; z-index: 1001;">
+                <h3>Налаштування</h3>
+                <button onclick="hideSettings()" style="margin-bottom: 15px;">Закрити</button>
+                <h4>Змінити ім'я</h4>
+                <form onsubmit="changeUsername(event)">
+                    <input type="text" id="new_username" placeholder="Нове ім'я" autocomplete="off" required>
+                    <button type="submit">Змінити ім'я</button>
+                </form>
+                <h4 style="margin-top: 15px;">Змінити пароль</h4>
+                <form onsubmit="changePassword(event)">
+                    <input type="password" id="new_password" placeholder="Новий пароль" autocomplete="new-password"
+                        required>
+                    <button type="submit">Змінити пароль</button>
+                    <div id="password-message" style="margin-top: 10px; font-size: 14px; font-weight: bold;"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="admin-panel-section" style="display: none;">
+        <button onclick="hideAdminPanel()">← Назад до проблем</button>
+        <h2 style="margin-top: 15px;">Управління правами користувачів</h2>
+        <div id="users-table-container"></div>
+    </div>
+
+    <script>
+        let token = null;
+        let ws = null;
+        let login_username = null;
+        let login_role = null;
+        let current_problem_id = null;
+
+        function parseJwt(token) {
+            try {
+                return JSON.parse(atob(token.split('.')[1]));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return localStorage.getItem(name);
+        }
+
+        window.onload = function () {
+            const savedToken = getCookie('access_token');
+            if (savedToken) {
+                token = savedToken;
+                const payload = parseJwt(token);
+                if (payload) {
+                    login_username = payload.username;
+                    login_role = payload.role;
+
+                    document.getElementById("register-section").style.display = "none";
+                    document.getElementById("login-section").style.display = "none";
+                    document.getElementById("chat-section").style.display = "block";
+                    document.getElementById("username-display").textContent = login_username;
+                    document.getElementById("role-display").textContent = login_role;
+
+                    if (login_role === 'admin') {
+                        document.getElementById('admin-panel-entry').style.display = 'block';
+                    } else {
+                        document.getElementById('admin-panel-entry').style.display = 'none';
+                    }
+
+                    loadProblems();
+                    updateAvatar();
+                } else {
+                    logout();
+                }
+            } else {
+                showLoginSection(null);
+            }
+        };
+
+        async function logout() {
+    if (!confirm("Ви впевнені, що хочете вийти з системи?")) {
+        return;
+    }
+
+    await fetch('/logout', { method: 'POST' });
+    document.cookie = "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    localStorage.removeItem('access_token');
+    token = null;
+    login_username = null;
+    login_role = null;
+    if (ws) { ws.close(); ws = null; }
+
+    window.location.reload();
+}
+
+        function updateAvatar() {
+            const avatar = document.getElementById('user-avatar');
+            if (login_username) {
+                avatar.textContent = login_username.charAt(0).toUpperCase();
+            }
+        }
+
+        function showSettings() {
+            document.getElementById('settings-modal').style.display = 'block';
+            setTimeout(() => { document.getElementById('new_username').focus(); }, 50);
+        }
+        function hideSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+
+        async function showAdminPanel() {
+            document.getElementById('chat-section').style.display = 'none';
+            document.getElementById('admin-panel-section').style.display = 'block';
+            loadUsersList();
+        }
+
+        function hideAdminPanel() {
+            document.getElementById('admin-panel-section').style.display = 'none';
+            document.getElementById('chat-section').style.display = 'block';
+            loadProblems();
+        }
+
+        async function loadUsersList() {
+            try {
+                const response = await fetch('/users');
+                const users = await response.json();
+                let html = `<table><tr><th>ID</th><th>Username</th><th>Email</th><th>Поточна Роль</th><th>Дія</th></tr>`;
+                users.forEach(u => {
+                    html += `
+                        <tr>
+                            <td>${u.user_id}</td>
+                            <td>${u.username}</td>
+                            <td>${u.email}</td>
+                            <td><strong style="color:#38BDF8">${u.role}</strong></td>
+                            <td>
+                                <select onchange="updateUserRole('${u.username}', this.value)">
+                                    <option value="">Змінити роль...</option>
+                                    <option value="user">User</option>
+                                    <option value="technician">Technician</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </td>
+                        </tr>
+                    `;
+                });
+                html += `</table>`;
+                document.getElementById('users-table-container').innerHTML = html;
+            } catch (e) {
+                document.getElementById('users-table-container').innerHTML = 'Помилка завантаження списку користувачів.';
+            }
+        }
+
+        async function updateUserRole(targetUsername, newRole) {
+            if (!newRole) return;
+            try {
+                const response = await fetch('/change_user_role', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `target_username=${encodeURIComponent(targetUsername)}&new_role=${encodeURIComponent(newRole)}`
+                });
+                const res = await response.json();
+                alert(res.detail || "Роль оновлено");
+                loadUsersList();
+            } catch (e) {
+                alert("Помилка зміни ролі");
+            }
+        }
+
+        async function changeUsername(event) {
+    event.preventDefault();
+    const usernameInput = document.getElementById('new_username');
+    const newUsername = usernameInput.value;
+    try {
+        const response = await fetch('/change_username', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `new_username=${encodeURIComponent(newUsername)}`
+        });
+        if (response.ok) {
+            // Знімаємо фокус перед нативним діалогом
+            document.activeElement.blur();
+            
+            alert("Ім'я успішно змінено. Будь ласка, перезайдіть.");
+            event.target.reset();
+            logout();
+        } else {
+            const r = await response.json(); 
+            alert(r.detail);
+        }
+    } catch (error) { 
+        alert('Помилка зміни імені'); 
+    }
+    finally { event.target.reset(); }
+}
+
+        async function changePassword(event) {
+                event.preventDefault();
+                const passwordInput = document.getElementById('new_password');
+                const newPassword = passwordInput.value;
+
+                // Знаходимо елемент для повідомлень під формою
+                const messageEl = document.getElementById('password-message');
+
+                // Очищаємо старе повідомлення
+                messageEl.textContent = '';
+                messageEl.style.color = '';
+
+                try {
+                    // Створюємо об'єкт FormData та додаємо туди наш новий пароль
+                    const formData = new FormData();
+                    formData.append('new_password', newPassword);
+
+                    // Відправляємо запит
+                    const response = await fetch('/change_password', {
+                        method: 'POST',
+                        // Зверніть увагу: заголовок Content-Type вказувати НЕ потрібно! 
+                        // Браузер автоматично виставить правильний тип для FormData.
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        // Якщо все добре: пишемо зелений текст і очищаємо поле
+                        messageEl.textContent = typeof result.detail === 'string'
+                            ? result.detail
+                            : "Пароль успішно змінено!";
+                        messageEl.style.color = "#2ec4b6";
+
+                        event.target.reset(); // Очищаємо інпут
+                    } else {
+                        // Обробляємо помилки
+                        let errorMessage = "Помилка зміни пароля";
+
+                        if (result.detail) {
+                            if (typeof result.detail === 'string') {
+                                errorMessage = result.detail;
+                            } else if (Array.isArray(result.detail)) {
+                                errorMessage = result.detail.map(err => err.msg).join(', ');
+                            } else if (typeof result.detail === 'object') {
+                                errorMessage = result.detail.message || JSON.stringify(result.detail);
+                            }
+                        }
+
+                        messageEl.textContent = errorMessage;
+                        messageEl.style.color = "#e71d36";
+                    }
+
+                } catch (error) {
+                    messageEl.textContent = 'Помилка з\'єднання з сервером';
+                    messageEl.style.color = "#e71d36";
+                }
+            }
+
+        function showLoginSection(event) {
+            if (event) event.preventDefault();
+            document.getElementById("register-section").style.display = "none";
+            document.getElementById("login-section").style.display = "block";
+            setTimeout(() => {
+                document.getElementById("login_username").value = "";
+                document.getElementById("login_password").value = "";
+            }, 20);
+        }
+
+        function showRegisterSection(event) {
+            if (event) event.preventDefault();
+            document.getElementById("login-section").style.display = "none";
+            document.getElementById("register-section").style.display = "block";
+            setTimeout(() => {
+                document.getElementById("register_username").value = "";
+                document.getElementById("register_password").value = "";
+                document.getElementById("email").value = "";
+            }, 20);
+        }
+
+        async function register(event) {
+            event.preventDefault();
+            const u = document.getElementById("register_username").value;
+            const p = document.getElementById('register_password').value;
+            const e = document.getElementById('email').value;
+
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}&email=${encodeURIComponent(e)}`
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    showLoginSection(null);
+                    alert("Реєстрація успішна!");
+                } else {
+                    document.getElementById("register-error").textContent = data.detail;
+                }
+            } catch (error) { document.getElementById("register-error").textContent = "Помилка сервера"; }
+        }
+
+        async function login(event) {
+            event.preventDefault();
+            const u = document.getElementById("login_username").value;
+            const p = document.getElementById("login_password").value;
+
+            try {
+                const response = await fetch('/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `username=${encodeURIComponent(u)}&password=${encodeURIComponent(p)}`
+                });
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    token = data.access_token;
+                    localStorage.setItem('access_token', token);
+                    document.cookie = `access_token=${token}; path=/; max-age=86400;`;
+                    login_username = u;
+
+                    const payload = parseJwt(token);
+                    login_role = payload.role;
+
+                    document.getElementById("login-section").style.display = "none";
+                    document.getElementById("chat-section").style.display = "block";
+                    document.getElementById("username-display").textContent = login_username;
+                    document.getElementById("role-display").textContent = login_role;
+
+                    if (login_role === 'admin') {
+                        document.getElementById('admin-panel-entry').style.display = 'block';
+                    } else {
+                        document.getElementById('admin-panel-entry').style.display = 'none';
+                    }
+
+                    loadProblems();
+                    updateAvatar();
+                } else {
+                    document.getElementById("login-error").textContent = data.detail || "Невірні дані";
+                }
+            } catch (error) { document.getElementById("login-error").textContent = "Помилка зв'язку з сервером"; }
+        }
+
+        async function loadProblems() {
+            try {
+                const response = await fetch('/problems');
+                if (!response.ok) return;
+                const problems = await response.json();
+                const container = document.getElementById('problems-container');
+                container.innerHTML = '';
+
+                if (login_role === 'technician' || login_role === 'admin') {
+                    document.getElementById('create-problem-btn').style.display = 'none';
+                } else {
+                    document.getElementById('create-problem-btn').style.display = 'block';
+                }
+
+                if (problems.length === 0) {
+                    container.innerHTML = '<p style="color:#94A3B8; margin: 10px 0;">Проблеми відсутні.</p>';
+                }
+
+                problems.forEach(p => {
+                    const div = document.createElement('div');
+                    div.className = 'problem-card';
+                    let statusClass = 'status-pending';
+                    if (p.status === 'В обробці') statusClass = 'status-in-progress';
+                    if (p.status === 'Завершений') statusClass = 'status-completed';
+
+                    div.innerHTML = `
+                        <h4>${p.title}</h4>
+                        <p>${p.description}</p>
+                        ${p.image_url ? `<p><img src="/static/${p.image_url}" style="max-height:80px; border-radius:4px; margin-top:5px;"></p>` : ''}
+                        <p style="margin-top:5px;"><strong>Статус:</strong> <span class="status-badge ${statusClass}">${p.status}</span></p>
+                        <p><strong>Від:</strong> ${p.username} ${p.admin_username ? ` | <strong>Технік:</strong> ${p.admin_username}` : ''}</p>
+                        <button onclick="openProblem(${p.id})">Відкрити діалог та деталі</button>
+                    `;
+                    container.appendChild(div);
+                });
+
+                const availContainer = document.getElementById('available-container');
+                const availTitle = document.getElementById('available-title');
+
+                if (login_role === 'technician' || login_role === 'admin') {
+                    const availResponse = await fetch('/available_problems');
+                    if (!availResponse.ok) return;
+                    const available = await availResponse.json();
+                    availContainer.innerHTML = '';
+
+                    if (available.length > 0) {
+                        availTitle.style.display = 'block';
+                        availContainer.style.display = 'block';
+                        available.forEach(p => {
+                            const div = document.createElement('div');
+                            div.className = 'problem-card';
+                            div.innerHTML = `
+                                <h4>${p.title}</h4>
+                                <p>${p.description}</p>
+                                ${p.image_url ? `<p><img src="/static/${p.image_url}" style="max-height:80px; border-radius:4px;"></p>` : ''}
+                                <p><strong>Користувач:</strong> ${p.username}</p>
+                                <button onclick="assignToMe(${p.id})">Призначити собі в роботу</button>
+                            `;
+                            availContainer.appendChild(div);
+                        });
+                    } else {
+                        availTitle.style.display = 'none';
+                        availContainer.style.display = 'none';
+                    }
+                } else {
+                    availTitle.style.display = 'none';
+                    availContainer.style.display = 'none';
+                }
+            } catch (error) { console.error('Помилка завантаження проблем:', error); }
+        }
+
+        async function assignToMe(problemId) {
+            try {
+                const response = await fetch('/assign_problem', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `problem_id=${problemId}`
+                });
+                if (response.ok) { loadProblems(); } else { const err = await response.json(); alert(err.detail); }
+            } catch (error) { alert('Помилка призначення'); }
+        }
+
+        function showCreateProblemForm() {
+            document.getElementById('problems-list').style.display = 'none';
+            document.getElementById('create-problem-form').style.display = 'block';
+        }
+
+        function backToProblemsList() {
+            document.getElementById('problems-list').style.display = 'block';
+            document.getElementById('problem-details').style.display = 'none';
+            document.getElementById('create-problem-form').style.display = 'none';
+            if (ws) { ws.close(); ws = null; }
+            current_problem_id = null;
+            loadProblems();
+        }
+
+        async function openProblem(id) {
+            current_problem_id = id;
+            try {
+                const response = await fetch(`/problem/${id}`);
+                if (!response.ok) return;
+                const problem = await response.json();
+
+                document.getElementById('problems-list').style.display = 'none';
+                document.getElementById('problem-details').style.display = 'block';
+                document.getElementById('detail-title').textContent = problem.title || 'Без назви';
+                document.getElementById('detail-description').textContent = problem.description || 'Опис відсутній';
+
+                const statusSpan = document.getElementById('detail-status');
+                statusSpan.textContent = problem.status || 'Чекає на обробку';
+                statusSpan.className = "status-badge " + (problem.status === 'В обробці' ? 'status-in-progress' : problem.status === 'Завершений' ? 'status-completed' : 'status-pending');
+
+                document.getElementById('detail-username').textContent = problem.username || 'Невідомий';
+                document.getElementById('detail-admin').textContent = problem.admin_username || 'Не призначено';
+
+                const img = document.getElementById('detail-image');
+                if (problem.image_url) {
+                    img.src = "/static/" + problem.image_url;
+                    img.style.display = 'block';
+                } else {
+                    img.style.display = 'none';
+                }
+
+                const actionsDiv = document.getElementById('detail-actions');
+                actionsDiv.innerHTML = '';
+
+                if (problem.admin_username === login_username || login_role === 'admin') {
+                    const statusSelect = document.createElement('select');
+                    statusSelect.innerHTML = `
+                        <option value="Чекає на обробку" ${problem.status === 'Чекає на обробку' ? 'selected' : ''}>Чекає на обробку</option>
+                        <option value="В обробці" ${problem.status === 'В обробці' ? 'selected' : ''}>В обробці</option>
+                        <option value="Завершений" ${problem.status === 'Завершений' ? 'selected' : ''}>Завершений</option>
+                    `;
+                    statusSelect.onchange = async (e) => {
+                        await fetch('/change_status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: `problem_id=${problem.id}&status=${encodeURIComponent(e.target.value)}`
+                        });
+                    };
+                    actionsDiv.appendChild(statusSelect);
+                }
+
+                if (problem.username === login_username || login_role === 'admin') {
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = 'Видалити проблему';
+                    deleteBtn.style.backgroundColor = '#EF4444';
+                    deleteBtn.onclick = async () => {
+                        if (confirm('Ви впевнені, що хочете видалити цю проблему?')) {
+                            await fetch('/delete_problem', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: `problem_id=${problem.id}`
+                            });
+                            backToProblemsList();
+                        }
+                    };
+                    actionsDiv.appendChild(deleteBtn);
+                }
+
+                renderMessages(problem.messages);
+                connectWebSocket();
+
+                await fetch('/mark_read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `problem_id=${id}`
+                });
+
+            } catch (error) { console.error('Помилка відкриття проблеми:', error); }
+        }
+
+        function renderMessages(messages) {
+            const messagesContainer = document.getElementById('messages-container');
+            messagesContainer.innerHTML = '';
+            messages.forEach(msg => {
+                const msgDiv = document.createElement('div');
+                const isMyMessage = msg.sender_username === login_username;
+                msgDiv.className = `message ${isMyMessage ? 'my' : 'other'}`;
+                const avatarLetter = msg.sender_username ? msg.sender_username.charAt(0).toUpperCase() : '?';
+                const time = new Date(msg.date_sent).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+
+                const readReceipt = isMyMessage ? (msg.read ? ' <span style="color:#10B981;">✓ Прочитано</span>' : ' <span style="color:#94A3B8;">✗ Не прочитано</span>') : '';
+
+                msgDiv.innerHTML = `
+                    <div class="sender">
+                        <div class="message-avatar">${avatarLetter}</div>
+                        <strong>${msg.sender_username}</strong>
+                        <span style="font-size: 10px; opacity: 0.7; margin-left: auto;">${time} ${readReceipt}</span>
+                    </div>
+                    <div style="word-break: break-all; margin-top:5px;">${msg.text}</div>
+                `;
+                messagesContainer.appendChild(msgDiv);
+            });
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        async function createProblem(event) {
+            event.preventDefault();
+            const titleInput = document.getElementById("problem_title").value;
+            const descriptionInput = document.getElementById("problem_description").value;
+            const imageInput = document.getElementById("problem_image").files[0];
+
+            const formData = new FormData();
+            formData.append('title', titleInput);
+            formData.append('description', descriptionInput);
+            if (imageInput) { formData.append('file', imageInput); }
+
+            try {
+                const response = await fetch('/create_problem', { method: 'POST', body: formData });
+                if (response.ok) { backToProblemsList(); } else { const data = await response.json(); document.getElementById("problem-error").textContent = data.detail; }
+            } catch (error) { document.getElementById("problem-error").textContent = "Помилка створення проблеми"; }
+        }
+
+        function connectWebSocket() {
+            if (ws) return;
+
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            ws = new WebSocket(`${protocol}://${window.location.host}/ws?token=${encodeURIComponent(token)}&problem_id=${current_problem_id}`);
+
+            ws.onmessage = function (event) {
+                try {
+                    const msg = JSON.parse(event.data);
+
+                    if (msg.type === "system_event") {
+                        if (msg.event === "status_changed" && msg.status) {
+                            const statusSpan = document.getElementById('detail-status');
+                            statusSpan.textContent = msg.status;
+                            statusSpan.className = "status-badge " + (msg.status === 'В обробці' ? 'status-in-progress' : msg.status === 'Завершений' ? 'status-completed' : 'status-pending');
+                        }
+                        if (msg.event === "messages_read" || msg.event === "assign_changed") {
+                            if (current_problem_id) {
+                                fetch(`/problem/${current_problem_id}`)
+                                    .then(r => r.json())
+                                    .then(problem => {
+                                        document.getElementById('detail-admin').textContent = problem.admin_username || 'Не призначено';
+                                        renderMessages(problem.messages);
+                                    });
+                            }
+                        }
+                        return;
+                    }
+
+                    const messagesContainer = document.getElementById('messages-container');
+                    const messageDiv = document.createElement('div');
+                    const isMyMessage = msg.username === login_username;
+                    messageDiv.className = `message ${isMyMessage ? 'my' : 'other'}`;
+                    const avatarLetter = msg.username.charAt(0).toUpperCase();
+                    const time = new Date(msg.timestamp).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+
+                    const readReceipt = isMyMessage ? (msg.read ? ' <span style="color:#10B981;">✓ Прочитано</span>' : ' <span style="color:#94A3B8;">✗ Не прочитано</span>') : '';
+
+                    messageDiv.innerHTML = `
+                        <div class="sender">
+                            <div class="message-avatar">${avatarLetter}</div>
+                            <strong>${msg.username}</strong>
+                            <span style="font-size: 10px; opacity: 0.7; margin-left: auto;">${time} ${readReceipt}</span>
+                        </div>
+                        <div style="word-break: break-all; margin-top:5px;">${msg.text}</div>
+                    `;
+                    messagesContainer.appendChild(messageDiv);
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+                    if (!isMyMessage) {
+                        fetch('/mark_read', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: `problem_id=${current_problem_id}`
+                        });
+                    }
+
+                } catch (e) { console.error("Помилка обробки WebSocket:", e); }
+            };
+
+            ws.onclose = () => { ws = null; };
+            ws.onerror = (error) => console.error('Помилка WebSocket:', error);
+        }
+
+        function sendMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById("messageText");
+            if (input.value.trim() !== "" && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(input.value);
+                input.value = '';
+            }
+        }
+    </script>
+</body>
+
+</html>
