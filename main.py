@@ -18,7 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import bcrypt
 
-DATABASE_URL = "postgresql+asyncpg://help_center_user:HXCYsCc2SX2d6PkEwYlOFLAtnYT5uIXV@dpg-d9ck4oe7r5hc738nbqog-a.oregon-postgres.render.com/help_center"
+import os
+
+# Програма спочатку шукає асинхронний URL у змінних Render (DATABASE_URL)
+# Якщо не знаходить (наприклад, коли ви тестуєте локально на комп'ютері),
+# використовує локальну базу даних або ваш зовнішній лінк як запасний варіант
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql+asyncpg://help_center_user:HXCYsCc2XS2d6PkFWy1OFLAtnYTU5uIXV@dpg-d9ck4oe7r5hc738nbqog-a.oregon-postgres.render.com/help_center"
+)
 
 engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
