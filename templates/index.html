@@ -37,6 +37,12 @@
             box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
         }
 
+        button:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
         button.secondary {
             background: transparent;
             border: 1px solid #3B82F6;
@@ -60,9 +66,7 @@
             display: block;
             position: relative;
             z-index: 10;
-            /* Переконуємося, що поля завжди зверху будь-яких невидимих шарів */
             pointer-events: auto !important;
-            /* Примусово дозволяємо події миші */
             user-select: auto !important;
             -webkit-user-select: auto !important;
         }
@@ -73,6 +77,12 @@
             outline: none;
             border-color: #3B82F6;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+
+        input:disabled {
+            background: #334155;
+            color: #94A3B8;
+            cursor: not-allowed;
         }
 
         #register-section,
@@ -234,10 +244,13 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h2 id="user-display">Користувач: <span id="username-display"></span> (<span id="role-display"></span>)</h2>
             <div style="display: flex; align-items: center; gap: 15px;">
+                <!-- Виправлена аватарка: додано min-width та flex-shrink: 0 -->
                 <div id="user-avatar"
-                    style="width: 40px; height: 40px; border-radius: 50%; background: #3B82F6; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">
+                    style="width: 40px; min-width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; background: #3B82F6; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 18px;">
                 </div>
                 <button onclick="showSettings()">Налаштування</button>
+                <!-- Виправлена кнопка адмін-панелі: прибрано зелений колір -->
+                <button id="admin-panel-entry" onclick="showAdminPanel()" style="display: none;">Адмін Панель</button>
                 <button onclick="logout()">Вийти</button>
             </div>
         </div>
@@ -249,12 +262,6 @@
 
             <h3 id="available-title" style="display: none; margin-top:30px;">Доступні для призначення проблеми</h3>
             <div id="available-container" style="display: none;"></div>
-
-            <div id="admin-panel-entry"
-                style="display: none; margin-top: 30px; border-top: 2px solid #334155; padding-top: 20px;">
-                <h3>Адміністрування системи</h3>
-                <button onclick="showAdminPanel()">Панель користувачів (Admin)</button>
-            </div>
         </div>
 
         <div id="problem-details" style="display: none;">
@@ -278,7 +285,7 @@
 
             <form onsubmit="sendMessage(event)">
                 <input type="text" id="messageText" autocomplete="off" placeholder="Введіть повідомлення" required />
-                <button type="submit">Надіслати</button>
+                <button type="submit" id="sendBtn">Надіслати</button>
             </form>
         </div>
 
@@ -307,6 +314,7 @@
                 </form>
                 <h4 style="margin-top: 15px;">Змінити пароль</h4>
                 <form onsubmit="changePassword(event)">
+                    <input type="password" id="old_password" placeholder="Старий пароль" required>
                     <input type="password" id="new_password" placeholder="Новий пароль" autocomplete="new-password"
                         required>
                     <button type="submit">Змінити пароль</button>
@@ -330,11 +338,8 @@
         let current_problem_id = null;
 
         function parseJwt(token) {
-            try {
-                return JSON.parse(atob(token.split('.')[1]));
-            } catch (e) {
-                return null;
-            }
+            try { return JSON.parse(atob(token.split('.')[1])); }
+            catch (e) { return null; }
         }
 
         function getCookie(name) {
@@ -360,7 +365,7 @@
                     document.getElementById("role-display").textContent = login_role;
 
                     if (login_role === 'admin') {
-                        document.getElementById('admin-panel-entry').style.display = 'block';
+                        document.getElementById('admin-panel-entry').style.display = 'inline-block';
                     } else {
                         document.getElementById('admin-panel-entry').style.display = 'none';
                     }
@@ -376,26 +381,18 @@
         };
 
         async function logout() {
-    if (!confirm("Ви впевнені, що хочете вийти з системи?")) {
-        return;
-    }
-
-    await fetch('/logout', { method: 'POST' });
-    document.cookie = "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-    localStorage.removeItem('access_token');
-    token = null;
-    login_username = null;
-    login_role = null;
-    if (ws) { ws.close(); ws = null; }
-
-    window.location.reload();
-}
+            if (!confirm("Ви впевнені, що хочете вийти з системи?")) { return; }
+            await fetch('/logout', { method: 'POST' });
+            document.cookie = "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            localStorage.removeItem('access_token');
+            token = null; login_username = null; login_role = null;
+            if (ws) { ws.close(); ws = null; }
+            window.location.reload();
+        }
 
         function updateAvatar() {
             const avatar = document.getElementById('user-avatar');
-            if (login_username) {
-                avatar.textContent = login_username.charAt(0).toUpperCase();
-            }
+            if (login_username) { avatar.textContent = login_username.charAt(0).toUpperCase(); }
         }
 
         function showSettings() {
@@ -457,96 +454,72 @@
                 const res = await response.json();
                 alert(res.detail || "Роль оновлено");
                 loadUsersList();
-            } catch (e) {
-                alert("Помилка зміни ролі");
-            }
+            } catch (e) { alert("Помилка зміни ролі"); }
         }
 
         async function changeUsername(event) {
-    event.preventDefault();
-    const usernameInput = document.getElementById('new_username');
-    const newUsername = usernameInput.value;
-    try {
-        const response = await fetch('/change_username', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `new_username=${encodeURIComponent(newUsername)}`
-        });
-        if (response.ok) {
-            // Знімаємо фокус перед нативним діалогом
-            document.activeElement.blur();
-            
-            alert("Ім'я успішно змінено. Будь ласка, перезайдіть.");
-            event.target.reset();
-            logout();
-        } else {
-            const r = await response.json(); 
-            alert(r.detail);
+            event.preventDefault();
+            const usernameInput = document.getElementById('new_username');
+            const newUsername = usernameInput.value;
+            try {
+                const response = await fetch('/change_username', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `new_username=${encodeURIComponent(newUsername)}`
+                });
+                if (response.ok) {
+                    document.activeElement.blur();
+                    alert("Ім'я успішно змінено. Будь ласка, перезайдіть.");
+                    event.target.reset();
+                    logout();
+                } else {
+                    const r = await response.json();
+                    alert(r.detail);
+                }
+            } catch (error) { alert('Помилка зміни імені'); }
+            finally { event.target.reset(); }
         }
-    } catch (error) { 
-        alert('Помилка зміни імені'); 
-    }
-    finally { event.target.reset(); }
-}
 
         async function changePassword(event) {
-                event.preventDefault();
-                const passwordInput = document.getElementById('new_password');
-                const newPassword = passwordInput.value;
+            event.preventDefault();
+            const oldPassword = document.getElementById('old_password').value;
+            const newPassword = document.getElementById('new_password').value;
+            const messageEl = document.getElementById('password-message');
 
-                // Знаходимо елемент для повідомлень під формою
-                const messageEl = document.getElementById('password-message');
+            messageEl.textContent = '';
+            messageEl.style.color = '';
 
-                // Очищаємо старе повідомлення
-                messageEl.textContent = '';
-                messageEl.style.color = '';
+            try {
+                const formData = new FormData();
+                formData.append('old_password', oldPassword);
+                formData.append('new_password', newPassword);
 
-                try {
-                    // Створюємо об'єкт FormData та додаємо туди наш новий пароль
-                    const formData = new FormData();
-                    formData.append('new_password', newPassword);
+                const response = await fetch('/change_password', {
+                    method: 'POST',
+                    body: formData
+                });
 
-                    // Відправляємо запит
-                    const response = await fetch('/change_password', {
-                        method: 'POST',
-                        // Зверніть увагу: заголовок Content-Type вказувати НЕ потрібно! 
-                        // Браузер автоматично виставить правильний тип для FormData.
-                        body: formData
-                    });
+                const result = await response.json();
 
-                    const result = await response.json();
-
-                    if (response.ok) {
-                        // Якщо все добре: пишемо зелений текст і очищаємо поле
-                        messageEl.textContent = typeof result.detail === 'string'
-                            ? result.detail
-                            : "Пароль успішно змінено!";
-                        messageEl.style.color = "#2ec4b6";
-
-                        event.target.reset(); // Очищаємо інпут
-                    } else {
-                        // Обробляємо помилки
-                        let errorMessage = "Помилка зміни пароля";
-
-                        if (result.detail) {
-                            if (typeof result.detail === 'string') {
-                                errorMessage = result.detail;
-                            } else if (Array.isArray(result.detail)) {
-                                errorMessage = result.detail.map(err => err.msg).join(', ');
-                            } else if (typeof result.detail === 'object') {
-                                errorMessage = result.detail.message || JSON.stringify(result.detail);
-                            }
-                        }
-
-                        messageEl.textContent = errorMessage;
-                        messageEl.style.color = "#e71d36";
+                if (response.ok) {
+                    messageEl.textContent = typeof result.detail === 'string' ? result.detail : "Пароль успішно змінено!";
+                    messageEl.style.color = "#2ec4b6";
+                    event.target.reset();
+                } else {
+                    let errorMessage = "Помилка зміни пароля";
+                    if (result.detail) {
+                        if (typeof result.detail === 'string') { errorMessage = result.detail; }
+                        else if (Array.isArray(result.detail)) { errorMessage = result.detail.map(err => err.msg).join(', '); }
+                        else if (typeof result.detail === 'object') { errorMessage = result.detail.message || JSON.stringify(result.detail); }
                     }
-
-                } catch (error) {
-                    messageEl.textContent = 'Помилка з\'єднання з сервером';
+                    messageEl.textContent = errorMessage;
                     messageEl.style.color = "#e71d36";
                 }
+            } catch (error) {
+                messageEl.textContent = 'Помилка з\'єднання з сервером';
+                messageEl.style.color = "#e71d36";
             }
+        }
 
         function showLoginSection(event) {
             if (event) event.preventDefault();
@@ -619,7 +592,7 @@
                     document.getElementById("role-display").textContent = login_role;
 
                     if (login_role === 'admin') {
-                        document.getElementById('admin-panel-entry').style.display = 'block';
+                        document.getElementById('admin-panel-entry').style.display = 'inline-block';
                     } else {
                         document.getElementById('admin-panel-entry').style.display = 'none';
                     }
@@ -755,6 +728,18 @@
                     img.style.display = 'none';
                 }
 
+                const msgInput = document.getElementById('messageText');
+                const sendBtn = document.getElementById('sendBtn');
+                if (problem.status === 'Завершений') {
+                    msgInput.disabled = true;
+                    sendBtn.disabled = true;
+                    msgInput.placeholder = "Діалог закрито (проблема завершена)";
+                } else {
+                    msgInput.disabled = false;
+                    sendBtn.disabled = false;
+                    msgInput.placeholder = "Введіть повідомлення";
+                }
+
                 const actionsDiv = document.getElementById('detail-actions');
                 actionsDiv.innerHTML = '';
 
@@ -856,11 +841,28 @@
                 try {
                     const msg = JSON.parse(event.data);
 
+                    if (msg.type === "error") {
+                        alert(msg.message);
+                        return;
+                    }
+
                     if (msg.type === "system_event") {
                         if (msg.event === "status_changed" && msg.status) {
                             const statusSpan = document.getElementById('detail-status');
                             statusSpan.textContent = msg.status;
                             statusSpan.className = "status-badge " + (msg.status === 'В обробці' ? 'status-in-progress' : msg.status === 'Завершений' ? 'status-completed' : 'status-pending');
+
+                            const msgInput = document.getElementById('messageText');
+                            const sendBtn = document.getElementById('sendBtn');
+                            if (msg.status === 'Завершений') {
+                                msgInput.disabled = true;
+                                sendBtn.disabled = true;
+                                msgInput.placeholder = "Діалог закрито (проблема завершена)";
+                            } else {
+                                msgInput.disabled = false;
+                                sendBtn.disabled = false;
+                                msgInput.placeholder = "Введіть повідомлення";
+                            }
                         }
                         if (msg.event === "messages_read" || msg.event === "assign_changed") {
                             if (current_problem_id) {
@@ -906,41 +908,31 @@
                 } catch (e) { console.error("Помилка обробки WebSocket:", e); }
             };
 
-            ws.onclose = () => { ws = null; };
-            ws.onerror = (error) => console.error('Помилка WebSocket:', error);
+            ws.onclose = (event) => {
+                console.log("WebSocket закрито:", event.reason);
+                ws = null;
+            };
+            ws.onerror = (error) => {
+                console.error('Помилка WebSocket:', error);
+            };
         }
 
         function sendMessage(event) {
-                // 1. Запобігаємо перезавантаженню сторінки, ТІЛЬКИ якщо event існує
-                if (event) {
-                    event.preventDefault();
-                }
+            if (event) { event.preventDefault(); }
 
-                const input = document.getElementById("messageText");
-                const text = input.value.trim();
+            const input = document.getElementById("messageText");
+            if (input.disabled) return;
 
-                if (text !== "" && ws && ws.readyState === WebSocket.OPEN) {
+            const text = input.value.trim();
 
-                    // 2. Відправляємо дані у форматі JSON (якщо ваш сервер очікує JSON)
-                    // Якщо сервер очікує інший формат (наприклад, просто текст), залиште ws.send(text);
-                    const payload = text
-                        // Додайте інші поля, якщо ваш сервер їх вимагає, наприклад:
-                        // type: "message",
-                        // problem_id: current_problem_id
-
-                    ws.send(payload);
-
-                    // Альтернатива (якщо сервер точно очікує просто текст, а не JSON):
-                    // ws.send(text);
-
-                    // 3. Очищаємо поле
-                    input.value = '';
-                } else if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    console.error("Помилка: WebSocket не підключений.");
-                    // Тут можна додати спробу перепідключення
-                    // connectWebSocket();
-                }
+            if (text !== "" && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(text);
+                input.value = '';
+            } else if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert("Помилка: з'єднання з сервером втрачено. Це могло статися через конфлікт бази даних. Спробуйте оновити сторінку або перевірити базу.");
+                console.error("WebSocket не підключений або закритий.");
             }
+        }
     </script>
 </body>
 
