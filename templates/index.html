@@ -911,13 +911,36 @@
         }
 
         function sendMessage(event) {
-            event.preventDefault();
-            const input = document.getElementById("messageText");
-            if (input.value.trim() !== "" && ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(input.value);
-                input.value = '';
+                // 1. Запобігаємо перезавантаженню сторінки, ТІЛЬКИ якщо event існує
+                if (event) {
+                    event.preventDefault();
+                }
+
+                const input = document.getElementById("messageText");
+                const text = input.value.trim();
+
+                if (text !== "" && ws && ws.readyState === WebSocket.OPEN) {
+
+                    // 2. Відправляємо дані у форматі JSON (якщо ваш сервер очікує JSON)
+                    // Якщо сервер очікує інший формат (наприклад, просто текст), залиште ws.send(text);
+                    const payload = text
+                        // Додайте інші поля, якщо ваш сервер їх вимагає, наприклад:
+                        // type: "message",
+                        // problem_id: current_problem_id
+
+                    ws.send(payload);
+
+                    // Альтернатива (якщо сервер точно очікує просто текст, а не JSON):
+                    // ws.send(text);
+
+                    // 3. Очищаємо поле
+                    input.value = '';
+                } else if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    console.error("Помилка: WebSocket не підключений.");
+                    // Тут можна додати спробу перепідключення
+                    // connectWebSocket();
+                }
             }
-        }
     </script>
 </body>
 
