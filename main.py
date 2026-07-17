@@ -422,7 +422,6 @@ async def get_problem_details(request: Request, problem_id: int):
             if not problem_obj:
                 return {}
             
-            # Перевірка безпеки IDOR на рівні бекенду
             if role == 'user' and problem_obj.user_id != user_id:
                 raise HTTPException(status_code=403, detail="Немає доступу до цієї проблеми")
 
@@ -518,18 +517,25 @@ async def change_username(request: Request, new_username: str = Form(...)):
         return JSONResponse(status_code=400, content={"detail": str(e)})
 
 @app.post('/change_password')
-async def change_password(request: Request, new_password: str = Form(...)):
+async def change_password(request: Request, old_password: str = Form(...), new_password: str = Form(...)):
     token = request.cookies.get('access_token')
     if not token: return JSONResponse(status_code=401, content={"detail": "Токен не знайдено"})
     try:
         user_id, username, role = await get_current_user_from_token(token)
         is_valid, error_msg = validate_password(new_password)
         if not is_valid: return JSONResponse(status_code=400, content={"detail": error_msg})
-        
+
         async with async_session() as session:
             user = await session.execute(select(User).where(User.user_id == user_id))
             user_obj = user.scalar_one_or_none()
             if not user_obj: return JSONResponse(status_code=404, content={"detail": "Користувача не знайдено"})
+
+            if not verify_password(old_password, user_obj.password):
+                return JSONResponse(status_code=400, content={"detail": "Невірний старий пароль"})
+
+            if old_password == new_password:
+                return JSONResponse(status_code=400, content={"detail": "Новий пароль не може співпадати зі старим"})
+
             user_obj.password = hash_password(new_password)
             await session.commit()
         return {"detail": "Пароль змінено"}
@@ -643,37 +649,51 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None, problem_id
     if not token or not problem_id:
         await websocket.close(code=1008, reason="Відсутні параметри")
         return
-        
+
     try:
         user_id, username, role = await get_current_user_from_token(token)
         await manager.connect(websocket, username, user_id, problem_id=problem_id)
-        
+
         try:
             while True:
                 data = await websocket.receive_text()
-                
-                # Якщо в чат-кімнаті онлайн більше ніж 1 людина, повідомлення одразу прочитане
+
+                async with async_session() as session:
+                    problem = await session.execute(select(Problem).where(Problem.id == int(problem_id)))
+                    problem_obj = problem.scalar_one_or_none()
+                    if not problem_obj:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": "Проблему не знайдено"
+                        }))
+                        continue
+                    if problem_obj.status == ProblemStatus.COMPLETED:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": "Ця проблема завершена. Відправка нових повідомлень неможлива."
+                        }))
+                        continue
+
                 is_read_instantly = manager.get_room_count(problem_id) > 1
-                
+
                 async with async_session() as session:
                     message = ProblemMessage(text=data, sender_id=user_id, problem_id=int(problem_id), read=is_read_instantly)
                     session.add(message)
                     await session.commit()
                     await session.refresh(message)
-                    
+
                 message_json = json.dumps({
                     "type": "chat_message",
                     "username": username,
                     "sender_id": user_id,
-                    "text": data, 
-                    "timestamp": datetime.now().isoformat(), 
+                    "text": data,
+                    "timestamp": datetime.now().isoformat(),
                     "read": is_read_instantly
                 })
                 await manager.broadcast(message_json, problem_id=problem_id)
-                
+
         except WebSocketDisconnect:
             manager.disconnect(websocket, problem_id=problem_id)
-            
+
     except ValueError as e:
         await websocket.close(code=1008, reason=str(e))
-#trigger deploy
